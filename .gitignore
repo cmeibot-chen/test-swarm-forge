@@ -1,8 +1,13 @@
-.cpcache/
-target/
+node_modules
+.next
+build
+coverage
+test-results
+.env
+*.log
+.swarmforge
+.worktrees
 .DS_Store
-
-# BEGIN SWARMFORGE RUNTIME
-/.swarmforge/
-/.worktrees/
-# END SWARMFORGE RUNTIME
+*.tsbuildinfo
+reports
+.stryker-tmp

@@ -1,2 +1,0 @@
-{:paths ["src" "spec"]
- :deps {speclj/speclj {:mvn/version "3.13.0"}}}
