@@ -1,5 +1,6 @@
 .cpcache/
 target/
+.DS_Store
 
 # BEGIN SWARMFORGE RUNTIME
 /.swarmforge/
