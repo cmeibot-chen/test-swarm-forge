@@ -1,2 +1,7 @@
 .cpcache/
 target/
+
+# BEGIN SWARMFORGE RUNTIME
+/.swarmforge/
+/.worktrees/
+# END SWARMFORGE RUNTIME

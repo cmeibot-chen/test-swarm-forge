@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SwarmForge Pack</title>
+<style>
+/*DASHBOARD_CSS*/
+</style>
+</head>
+<body>
+<div class="cockpit">
+  <header class="top">
+    <div class="pack-identity">
+      <h1 id="pack-title">SwarmForge</h1>
+      <button class="btn btn-danger btn-sm" type="button" id="teardown-btn">Teardown</button>
+      <span class="meta" id="pack-meta"><span class="dot">●</span> live</span>
+    </div>
+    <span class="spacer"></span>
+    <div class="pack-actions">
+      <button class="btn btn-primary" type="button" id="btn-new-project">New Project</button>
+      <div class="menu" id="open-project-menu">
+        <button class="btn" type="button" id="btn-open-project">Open Project</button>
+        <div class="menu-list" id="open-project-list"></div>
+      </div>
+      <button class="btn btn-primary" type="button" id="btn-new-task">New Task</button>
+    </div>
+  </header>
+  <p id="error" class="error"></p>
+
+  <div class="attention" id="attention">
+    <div class="tag">Attention</div>
+    <div id="attention-rows">
+      <div id="attention-delivery"></div>
+      <div id="attention-approvals"></div>
+      <div id="attention-allows"></div>
+      <div id="attention-clarifications"></div>
+    </div>
+  </div>
+
+  <div class="body">
+    <main class="board">
+      <div class="columns" id="columns"></div>
+    </main>
+    <div class="splitter" title="Drag to resize"></div>
+    <aside class="rail">
+      <section class="ts">
+        <div class="ts-head">
+          <button type="button" id="master-title">Master</button>
+        </div>
+        <div class="history" id="chat-history"></div>
+        <div class="lt-status" id="lieutenant-status" aria-live="polite"></div>
+        <div class="composer">
+          <textarea id="chat-input" rows="4" placeholder="Follow-up… (Enter send · Shift+Enter newline)"></textarea>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="float-layer" id="reject-layer">
+  <div class="float" role="dialog" aria-labelledby="rt-title">
+    <div class="titlebar" id="rt-title">Rejected task</div>
+    <div class="body-pad">
+      <label for="rt-text">Comments</label>
+      <textarea id="rt-text" placeholder="Audit comments for retry…"></textarea>
+      <div class="actions">
+        <button type="button" class="btn btn-danger" id="rt-delete">Delete</button>
+        <button type="button" class="btn btn-primary" id="rt-retry">Try Again</button>
+        <button type="button" class="btn btn-approve" id="rt-accept">Accept Unchanged</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="float-layer" id="new-project-layer">
+  <div class="float" role="dialog" aria-labelledby="np-title" style="width:min(720px,94vw);min-width:min(560px,94vw)">
+    <div class="titlebar" id="np-title">New Project</div>
+    <div class="body-pad">
+      <label for="np-name">Name</label>
+      <input id="np-name" type="text" placeholder="my-app or owner/repo">
+      <p class="inferred" id="np-inferred"></p>
+      <label class="toggle"><input type="checkbox" id="np-github"> github repo</label>
+      <label for="np-mission">Mission</label>
+      <textarea id="np-mission" placeholder="What this project is for…"></textarea>
+      <label for="np-conf">Config</label>
+      <textarea id="np-conf"></textarea>
+      <div class="actions">
+        <button type="button" class="btn" id="np-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="np-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="float-layer" id="new-task-layer">
+  <div class="float" role="dialog" aria-labelledby="nt-title">
+    <div class="titlebar" id="nt-title">New Task</div>
+    <div class="body-pad">
+      <p class="note" id="nt-note">Sends the name and text to the lieutenant. Does not create a card.</p>
+      <label for="nt-name">Name</label>
+      <input id="nt-name" type="text" placeholder="task-name">
+      <label>Type</label>
+      <div class="pack-radios" id="nt-types">
+      </div>
+      <label for="nt-text">Task</label>
+      <textarea id="nt-text" placeholder="What the starting agent should do…"></textarea>
+      <div class="actions">
+        <button type="button" class="btn" id="nt-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="nt-ok">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*DASHBOARD_JS*/
+</script>
+</body>
+</html>
