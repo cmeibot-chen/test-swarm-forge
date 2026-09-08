@@ -70,3 +70,22 @@ health, and app rebuild instead of todo creation/persistence. Keep the configure
 TypeScript, npm test, acceptance, browser, and container gates runnable; downstream
 roles run their assigned quality gates. This specification stage validates
 Gherkin parsing and DRY only and does not claim implementation tests have passed.
+
+## Specification audit
+
+| Card requirement | Specification evidence | Implementation status at handoff |
+| --- | --- | --- |
+| Clear Hello World root; replace todo UI | Hello World 01; headed page steps 1–4 | Coder must replace starter page, title, and todo-facing documentation |
+| Minimal, accessible page | Main landmark and heading assertions; headed page step 5 | Coder implementation and browser verification pending |
+| Real PostgreSQL health | PostgreSQL health 01 reachable/unreachable examples; headed outage/recovery | Existing endpoint contract retained; executable acceptance wiring pending |
+| Required stack and production Compose | Imported pinned starter; Setup and Production rebuild | Coder retains stack and adapts container gate |
+| Acceptance and browser QA | Both feature files and this headed suite | Coder replaces todo handlers, hardcoded feature paths, and browser test |
+| TypeScript/npm/acceptance/UI/container gates | Delivery gates above and existing package scripts | Downstream execution pending; no gate success claimed |
+
+Both features parsed successfully and produced zero IR-DRY findings. Greeting
+and title remain separate expected parameters because either can regress
+independently. HTTP status and JSON status likewise assert different outputs.
+No acceptance mutation was run by specifier. The imported application and tests
+are the starting implementation, not a completed Hello World implementation.
+No generated artifacts or scratch files are committed. Unrelated local agent
+configuration edits remain outside this delivery.

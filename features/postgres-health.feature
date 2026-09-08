@@ -6,7 +6,7 @@ Feature: PostgreSQL health
 
   Scenario Outline: PostgreSQL health 01 - health reflects database availability
     Given PostgreSQL is <availability>
-    When I request the health path
+    When I send GET to /api/health
     Then the HTTP response code is <code>
     And the JSON response has status <status>
 
