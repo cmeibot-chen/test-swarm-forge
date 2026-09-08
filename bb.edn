@@ -1,0 +1,3 @@
+{:paths ["src" "spec"]
+ :tasks {test {:doc "Run the Speclj suite."
+               :task (shell "bb clojure -M -m speclj.main -c spec")}}}
