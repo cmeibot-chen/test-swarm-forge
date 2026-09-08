@@ -32,7 +32,7 @@
          "- Do not search the worktree for `.swarmforge/board/tasks.tsv`. That file is on the project (master).\n"
          "- Use TASK_NAME from `ready_for_next.sh` or the inbound `task:` header. For a batch, that name is the top item. The helper fills `task:` from the in-process batch, else the sender-lane card.\n"
          "- Do not invent a name or hunt `sessions.tsv`.\n"
-         "- Constitution tools: `swarm_tool.sh require crap4clj` (also dry4clj, clj-mutate, cloverage, speclj, speclj-structure-check, APS, or the language table). If missing, `swarm_tool.sh ensure <tool>`. Do not invent project `bb` proxies.\n"
+         "- Constitution tools: use `swarm_tool.sh require <tool>` for the applicable language table. TypeScript uses its pinned npm tools and local wrappers (`stryker`, `crap-typescript`, `jscpd`, and APS); if a required tool is missing, run `swarm_tool.sh ensure <tool>`. Do not invent project `bb` proxies.\n"
          "- Run constitution tools one at a time. Worker-limited tools use `--max-workers 4` or `--workers 4`. Mutation is differential: no `--mutate-all`, no `--level full`.\n"
          "- Do not clone those repos into `./tmp`.\n"
          "- If merge_and_process.sh or ready_for_next reports a merge conflict, resolve the conflicted files, git add, and commit. Do not invent git merge. Parallel cards on one tree will conflict; that is expected.\n"
@@ -178,9 +178,15 @@
         command "Enter")
     (println (str "  " cyan "[" display "]" reset " started in session " session))))
 
+(defn bb-command [ctx]
+  (let [launcher (fs/path (:script-dir ctx) "bb.sh")]
+    (if (fs/executable? launcher)
+      (str launcher)
+      "bb")))
+
 (defn stop-handoff-daemon! [ctx]
   (process/sh {:continue true}
-              "bb" (str (fs/path (:script-dir ctx) "stop_handoff_daemon.bb"))
+              (bb-command ctx) (str (fs/path (:script-dir ctx) "stop_handoff_daemon.bb"))
               (str (:working-dir ctx))))
 
 (defn uname []

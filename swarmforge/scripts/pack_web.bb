@@ -398,7 +398,10 @@
     (sh "tmux" "-S" socket "kill-server")))
 
 (defn stop-handoffd! [root]
-  (sh "bb" (str (fs/path script-dir "stop_handoff_daemon.bb")) (str root)))
+  (let [launcher (fs/path script-dir "bb.sh")]
+    (sh (if (fs/executable? launcher) (str launcher) "bb")
+        (str (fs/path script-dir "stop_handoff_daemon.bb"))
+        (str root))))
 
 (defn swarm-cleanup! [root socket]
   (let [script (str (fs/path script-dir "swarm-cleanup.sh"))

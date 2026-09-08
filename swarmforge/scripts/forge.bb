@@ -383,16 +383,22 @@
 (defn swarmforge-bb [forge]
   (str (fs/path forge "swarmforge" "scripts" "swarmforge.bb")))
 
+(defn bb-command []
+  (let [launcher (fs/path script-dir "bb.sh")]
+    (if (fs/executable? launcher) (str launcher) "bb")))
+
 (defn start-project-runtime! [forge name]
   (let [dest (project-dir forge name)
+        sandbox? (project-runtime/sandboxed? dest)
         script (if (project-runtime/sandboxed? dest)
                  (str (fs/path dest "swarmforge/scripts/swarmforge.bb"))
                  (swarmforge-bb forge))
+        command (if sandbox? "bb" (bb-command))
         log (fs/path dest ".swarmforge" "start.log")]
     (fs/create-dirs (fs/parent log))
     (fs/delete-if-exists log)
     (project-runtime/ensure! dest)
-    (process/process (project-runtime/exec-argv dest ["bb" script "--start-project" (str dest)])
+    (process/process (project-runtime/exec-argv dest [command script "--start-project" (str dest)])
                      {:out (str log) :err :out})))
 
 (defn stop-project-runtime! [forge name]
@@ -404,7 +410,7 @@
         (when (zero? (:exit result))
           (project-runtime/checked (process/sh {:continue true} "sbx" "stop" (project-runtime/sandbox-name dest))))
         result)
-      (process/sh {:continue true} "bb" script "--stop-project" dest))))
+      (process/sh {:continue true} (bb-command) script "--stop-project" dest))))
 
 (defn runtime-timeout-ms []
   (let [value (System/getenv "SWARMFORGE_RUNTIME_TIMEOUT_MS")]

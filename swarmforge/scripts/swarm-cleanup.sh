@@ -25,7 +25,9 @@ if [[ -x "$SCRIPT_DIR/pack_board.sh" ]]; then
   "$SCRIPT_DIR/pack_board.sh" archive-all --root "$WORKING_DIR" || true
 fi
 
-if has_command bb; then
+if [[ -x "$SCRIPT_DIR/bb.sh" ]]; then
+  "$SCRIPT_DIR/bb.sh" "$SCRIPT_DIR/stop_handoff_daemon.bb" "$WORKING_DIR" 2>/dev/null || true
+elif has_command bb; then
   bb "$SCRIPT_DIR/stop_handoff_daemon.bb" "$WORKING_DIR" 2>/dev/null || true
 else
   DAEMON_PID_FILE="$WORKING_DIR/.swarmforge/daemon/handoffd.pid"

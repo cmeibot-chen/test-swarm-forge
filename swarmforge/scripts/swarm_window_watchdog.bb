@@ -58,9 +58,11 @@
   (process/sh {:continue true} "tmux" "-S" tmux-socket "kill-session" "-t" session))
 
 (defn stop-handoff-daemon! [script-dir working-dir]
-  (process/sh {:continue true}
-              "bb" (str (fs/path script-dir "stop_handoff_daemon.bb"))
-              (str working-dir)))
+  (let [launcher (fs/path script-dir "bb.sh")]
+    (process/sh {:continue true}
+                (if (fs/executable? launcher) (str launcher) "bb")
+                (str (fs/path script-dir "stop_handoff_daemon.bb"))
+                (str working-dir))))
 
 (defn kill-all-sessions! [script-dir window-state-file working-dir tmux-socket backend]
   (stop-handoff-daemon! script-dir working-dir)

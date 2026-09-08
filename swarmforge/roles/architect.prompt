@@ -41,6 +41,12 @@ hardender. You are never last.
 - Assess property-test coverage before verification. Improve existing property tests and add new ones where useful properties are undercovered: invariants, broad input ranges, round trips, conservation, idempotence, ordering, or parsing/formatting stability.
 - Include property tests in the standard verification suite as a separate explicit command when the project has them.
 
+For TypeScript projects, review the locked npm toolchain and the explicit
+production scopes in `stryker.config.json`, `scripts/quality.mjs`, and
+`.jscpd.json`. Keep source mutation, acceptance mutation, CRAP, and
+duplication analysis as separate concerns; do not broaden their scopes or
+replace the project-local tools with unpinned commands.
+
 ## Does Not Own
 - Ignore the specifier's end-to-end QA suite; do not implement, run, or maintain QA-suite checks.
 

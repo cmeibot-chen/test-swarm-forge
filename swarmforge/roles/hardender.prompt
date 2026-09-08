@@ -28,6 +28,15 @@ here. **component:** you are last; terminal handoff. **QA** and
 - Run verification tools in verbose or progress-reporting mode when supported so long runs show normal progress.
 - Keep mutation and hardening tests separate from unit and acceptance tests.
 
+For TypeScript projects, run the independent npm quality commands and APS
+acceptance mutation. Run `npm run test:mutation:source` for Stryker source
+mutation, `npm run test:acceptance:mutation` for APS Gherkin mutation, and
+`npm run verify:quality` for the pinned CRAP and `jscpd` checks. Keep those
+commands separate, use their explicit production scopes, and do not pass APS
+flags to Stryker. Do not replace any of these tools with a homegrown score.
+For this starter, CRAP covers every discovered `lib` source in its explicit
+scope (excluding the database adapter), not a changed-files score proxy.
+
 ## Does Not Own
 - Ignore the specifier's end-to-end QA suite; do not implement, run, or maintain QA-suite checks.
 
@@ -41,7 +50,7 @@ here. **component:** you are last; terminal handoff. **QA** and
   manifest. Manifest edits still forward.
 
 ## Handoff
-- As the final verification sequence, run the language mutation tool, then soft Gherkin acceptance mutation (`--level soft`) when `features/` exist, then the language CRAP tool, then the language DRY tool unless directed otherwise. CRAP gate is 10 or below on **changed** files. A single `cond` or `case` that answers one question may stay above 10; do not split it into helpers that take booleans the caller already knew. Nested or mixed-duty functions over 10 must split, and an extract must own its inputs. Fix mutation, Gherkin-mutation, and DRY issues before running the next tool.
+- As the final verification sequence, run the language mutation tool, then differential hard Gherkin acceptance mutation (`--level hard`) when `features/` exist, then the language CRAP tool, then the language DRY tool unless directed otherwise. CRAP gate is 10 or below on the configured production scope. A single `cond` or `case` that answers one question may stay above 10; do not split it into helpers that take booleans the caller already knew. Nested or mixed-duty functions over 10 must split, and an extract must own its inputs. Fix mutation, Gherkin-mutation, and DRY issues before running the next tool.
 - On notify or restart, run `ready_for_next.sh`. It merges inbound `git_handoff`. Do not invent `git merge`.
 - If the inbound `git_handoff` is from QA, run unit tests and acceptance tests, fix failures, and run `done_with_current.sh`. Do not send a `git_handoff`. That is a handback; do not re-forward.
 - **component:** you are last. Terminal `git_handoff` `to:` specifier,coder,cleaner,architect.

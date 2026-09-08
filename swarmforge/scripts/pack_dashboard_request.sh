@@ -2,4 +2,4 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec bb "$SCRIPT_DIR/pack_dashboard_request.bb" "$@"
+exec "$SCRIPT_DIR/bb.sh" "$SCRIPT_DIR/pack_dashboard_request.bb" "$@"

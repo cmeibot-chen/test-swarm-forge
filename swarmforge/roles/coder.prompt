@@ -31,6 +31,12 @@ here. **utility:** the card text is the spec; no APS, no
 - Do not run language mutation, CRAP, or DRY checks; the cleaner, architect, and hardender own those checks.
 - Do not run Gherkin acceptance mutation.
 
+For TypeScript projects, use the project's pinned npm lockfile and run
+`npm run typecheck`, `npm run lint`, and `npm test` for the implementation
+slice. Keep `npm run test:property` separate when the project defines it.
+Do not run source mutation, acceptance mutation, CRAP, or duplication checks;
+those are owned by hardender and the quality-verification roles.
+
 ## Handoff
 - On notify or restart, run `ready_for_next.sh`. It merges inbound `git_handoff`. Do not invent `git merge`.
 - If the inbound `git_handoff` is from QA, run unit tests and acceptance tests, fix failures, and run `done_with_current.sh`. Do not send a `git_handoff`.

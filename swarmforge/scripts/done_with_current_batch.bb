@@ -63,7 +63,10 @@
   (System/exit status))
 
 (defn finish-done! []
-  (process/exec "bb" (str (fs/path script-dir "handoff_lib.bb")) "finish-done"))
+  (let [launcher (fs/path script-dir "bb.sh")]
+    (process/exec (if (fs/executable? launcher) (str launcher) "bb")
+                  (str (fs/path script-dir "handoff_lib.bb"))
+                  "finish-done")))
 
 (defn -main []
   (let [inbox (inbox-dir)

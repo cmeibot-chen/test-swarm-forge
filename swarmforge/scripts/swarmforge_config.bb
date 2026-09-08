@@ -181,7 +181,8 @@
                  (str type "\t" (str/join "," roles) "\n")))))
 
 (def required-helpers
-  ["handoff_lib.bb" "swarm_handoff.sh" "swarm_handoff.bb"
+  ["bb.sh" "install-bb.sh" "runtime_preflight.sh" "create_typescript_fixture.sh"
+   "handoff_lib.bb" "swarm_handoff.sh" "swarm_handoff.bb"
    "swarm_tool.sh" "swarm_tool.bb"
    "commit-msg-hook.sh" "commit_msg_hook.bb"
    "merge_and_process.sh" "merge_and_process.bb"

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-exec bb "$SCRIPT_DIR/ready_for_next_batch.bb" "$@"
+exec "$SCRIPT_DIR/bb.sh" "$SCRIPT_DIR/ready_for_next_batch.bb" "$@"

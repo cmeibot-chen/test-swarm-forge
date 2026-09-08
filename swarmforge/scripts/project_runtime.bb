@@ -15,14 +15,33 @@
     (spit (str tmp) (str (pr-str value) "\n"))
     (fs/move tmp file {:atomic-move true :replace-existing true})))
 
+(def project-name-pattern #"[A-Za-z0-9][A-Za-z0-9._-]*")
+
+(defn canonical-path [path]
+  (try
+    (fs/canonicalize path)
+    (catch Exception _
+      (fs/absolutize path))))
+
 (defn forge-root [project]
-  (let [parent (fs/parent (fs/absolutize project))]
-    (when (and parent (= "projects" (fs/file-name parent))) (fs/parent parent))))
+  (let [project (canonical-path project)
+        projects (fs/parent project)
+        forge (some-> projects fs/parent)
+        name (some-> project fs/file-name)]
+    (when (and (fs/directory? project)
+               projects
+               (= "projects" (fs/file-name projects))
+               forge
+               (fs/directory? forge)
+               (re-matches project-name-pattern (str name)))
+      forge)))
+
 (defn host-dir [project]
-  (when-let [forge (forge-root project)]
-    (when-not (re-matches #"[A-Za-z0-9][A-Za-z0-9._-]*" (fs/file-name project))
-      (throw (ex-info "Invalid project name" {})))
-    (fs/path forge ".swarmforge" "integrations" (fs/file-name project))))
+  (let [project (canonical-path project)]
+    (when-let [forge (forge-root project)]
+      (when-not (re-matches project-name-pattern (str (fs/file-name project)))
+        (throw (ex-info (str "Invalid project name: " project) {})))
+      (fs/path forge ".swarmforge" "integrations" (fs/file-name project)))))
 (defn config [project]
   (if-let [forge (forge-root project)]
     (merge {:runtime :local :poll-seconds 60 :issue-label "swarmforge"}
@@ -32,9 +51,12 @@
 (defn sandboxed? [project]
   (and (not (inside?)) (= :sbx (:runtime (config project)))))
 (defn sandbox-name [project]
-  (str "swarmforge-" (subs (str/replace (str (fs/file-name project)) #"[^A-Za-z0-9.-]" "-")
-                            0 (min 35 (count (str (fs/file-name project)))))
-       "-" (format "%08x" (bit-and 0xffffffff (hash (str (fs/absolutize project)))))))
+  (let [project (canonical-path project)
+        name (str (fs/file-name project))]
+    (str "swarmforge-" (subs (str/replace name #"[^A-Za-z0-9.-]" "-")
+                              0 (min 35 (count name)))
+         "-" (format "%08x" (bit-and 0xffffffff (hash (str project)))))))
+
 (defn exec-argv [project argv]
   (if (sandboxed? project)
     (into ["sbx" "exec" "-e" "SWARMFORGE_IN_SANDBOX=1"
@@ -42,9 +64,16 @@
            "-e" "SWARMFORGE_PREVENT_SLEEP=0" "-w" (str project)
            (sandbox-name project)]
           (mapv (fn [arg]
-                  (let [prefix (str (forge-root project) "/swarmforge/scripts/")]
-                    (if (and (string? arg) (str/starts-with? arg prefix))
-                      (str project "/swarmforge/scripts/" (subs arg (count prefix))) arg))) argv))
+                  (if-let [forge (forge-root project)]
+                    (let [raw-forge (fs/parent (fs/parent (fs/absolutize project)))
+                          prefixes [(str forge "/swarmforge/scripts/")
+                                    (str raw-forge "/swarmforge/scripts/")]
+                          prefix (some #(when (and (string? arg)
+                                                   (str/starts-with? arg %)) %)
+                                       (distinct prefixes))]
+                      (if prefix
+                        (str project "/swarmforge/scripts/" (subs arg (count prefix))) arg))
+                    arg)) argv))
     (vec argv)))
 (defn run [project & argv]
   (apply shell/sh (exec-argv project argv)))
@@ -57,7 +86,9 @@
 (defn read-sandbox-state [project]
   (let [entries (json/parse-string (checked (shell/sh "sbx" "ls" "--json")) true)]
     (some #(when (= (sandbox-name project) (or (:name %) (:Name %))) %)
-          (if (vector? entries) entries (or (:sandboxes entries) (:items entries))))))
+          (if (vector? entries)
+            entries
+            (or (:sandboxes entries) (:items entries) (:data entries) [])))))
 (defn sandbox-state [project]
   (if *sandbox-states*
     (let [k (str project)]
@@ -68,16 +99,26 @@
 (defn running? [entry]
   (= "running" (str/lower-case (str (or (:status entry) (:state entry) (:Status entry) (:State entry))))))
 (defn stopped? [entry]
-  (or (nil? entry)
-      (= "stopped" (str/lower-case (str (or (:status entry) (:state entry) (:Status entry) (:State entry)))))))
+  (and (map? entry)
+       (= "stopped" (str/lower-case
+                     (str (or (:status entry) (:state entry) (:Status entry) (:State entry)))))))
+
 (defn ensure! [project]
   (when (sandboxed? project)
     (let [{:keys [template cpus memory]} (config project)]
       (when (str/blank? template) (throw (ex-info "Sandbox template is required" {})))
-      (when-not (sandbox-state project)
-        (checked (shell/sh "sbx" "create" "--name" (sandbox-name project)
-                           "--template" template "--cpus" (str (or cpus 4))
-                           "--memory" (or memory "8g") "shell" (str project)))))))
+      (let [name (sandbox-name project)
+            state (sandbox-state project)]
+        (cond
+          (nil? state)
+          (checked (shell/sh "sbx" "create" "--name" name
+                             "--template" template "--cpus" (str (or cpus 4))
+                             "--memory" (or memory "8g") "shell" (str project)))
+
+          (stopped? state)
+          (checked (shell/sh "sbx" "start" name))
+
+          :else nil)))))
 
 ;; Socket names are VM-local. Register only through a known project root;
 ;; never infer a host process from a sandbox PID or socket pathname.
@@ -102,9 +143,19 @@
       (apply shell/sh argv))
     (apply shell/sh argv)))
 
+(defn bb-command [project]
+  (if (inside?)
+    "bb"
+    (let [launcher (fs/path project "swarmforge/scripts/bb.sh")]
+      (cond
+        (fs/executable? launcher) (str launcher)
+        (not (str/blank? (System/getenv "SWARMFORGE_BB_PATH")))
+        (System/getenv "SWARMFORGE_BB_PATH")
+        :else "bb"))))
+
 (defn runtime-check [project mode]
   (let [script (str (fs/path project "swarmforge/scripts/project_runtime.bb"))]
-    (zero? (:exit (run project "bb" script mode (str project))))))
+    (zero? (:exit (run project (bb-command project) script mode (str project))))))
 (defn local-alive? [project]
   (let [state (fs/path project ".swarmforge")
         read-text #(when (fs/regular-file? %) (str/trim (slurp (str %))))

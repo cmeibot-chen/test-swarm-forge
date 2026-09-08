@@ -2,15 +2,22 @@
 
 (ns swarm-tool
   (:require [babashka.fs :as fs]
+            [clojure.java.io :as io]
             [clojure.java.shell :as sh]
-            [clojure.string :as str]))
+            [clojure.string :as str])
+  (:import [java.nio.channels FileChannel]
+           [java.nio.file Files StandardOpenOption]
+           [java.security MessageDigest]))
 
 (def catalog
   {"gherkin-parser" {:source "github.com/unclebob/Acceptance-Pipeline-Specification"
+                     :revision "accaa33d503340c56513ef387258f8da929ba902"
                      :bb-task "gherkin-parser"}
    "ir-dry-checker" {:source "github.com/unclebob/Acceptance-Pipeline-Specification"
+                     :revision "accaa33d503340c56513ef387258f8da929ba902"
                      :bb-task "gherkin-ir-dry-checker"}
    "gherkin-mutator" {:source "github.com/unclebob/Acceptance-Pipeline-Specification"
+                      :revision "accaa33d503340c56513ef387258f8da929ba902"
                       :bb-task "gherkin-mutator"}
    "crap4clj" {:source "github.com/unclebob/crap4clj" :bb-task "crap4clj"
                :needs ["cloverage"]}
@@ -31,7 +38,14 @@
    "mutate4go" {:source "github.com/unclebob/mutate4go" :bb-task "mutate4go"}
    "crap4java" {:source "github.com/unclebob/crap4java" :bb-task "crap4java"}
    "dry4java" {:source "github.com/unclebob/dry4java" :bb-task "dry4java"}
-   "mutate4java" {:source "github.com/unclebob/mutate4java" :bb-task "mutate4java"}})
+   "mutate4java" {:source "github.com/unclebob/mutate4java" :bb-task "mutate4java"}
+   "stryker" {:npm-package "@stryker-mutator/core" :bin "stryker"}
+   "jscpd" {:npm-package "jscpd" :bin "jscpd"}
+   "crap-typescript" {:npm-package "@barney-media/crap-typescript" :bin "crap-typescript"}
+   "typescript" {:npm-package "typescript" :bin "tsc"}
+   "eslint" {:npm-package "eslint" :bin "eslint"}
+   "vitest" {:npm-package "vitest" :bin "vitest"}
+   "playwright" {:npm-package "@playwright/test" :bin "playwright"}})
 
 (def usage-text
   (str "Usage:\n"
@@ -55,20 +69,102 @@
 (defn roles-at? [root]
   (and root (fs/exists? (fs/path root ".swarmforge" "roles.tsv"))))
 
-(defn git-common-dir []
-  (let [git (sh/sh "git" "rev-parse" "--git-common-dir")]
-    (when (zero? (:exit git))
-      (let [path (fs/path (str/trim (:out git)))]
-        (str (if (fs/absolute? path) path (fs/absolutize path)))))))
+(defn npm-root? [root]
+  (and root (fs/regular-file? (fs/path root "package.json"))))
 
-(defn project-root []
-  (or (let [parent (some-> (git-common-dir) fs/parent str)]
-        (when (roles-at? parent) parent))
-      (let [git (sh/sh "git" "rev-parse" "--show-toplevel")
-            root (when (zero? (:exit git)) (str/trim (:out git)))]
-        (when (roles-at? root) root))
-      (when (roles-at? (fs/cwd)) (fs/cwd))
-      (exit! 1 "Cannot find SwarmForge project root")))
+(defn npm-project? [root]
+  (and (npm-root? root)
+       (fs/regular-file? (fs/path root "package-lock.json"))))
+
+(defn ancestor-paths [start]
+  (loop [root (fs/absolutize start) paths []]
+    (if root
+      (recur (fs/parent root) (conj paths root))
+      paths)))
+
+(defn explicit-project-root []
+  (when-let [value (not-empty (System/getenv "SWARMFORGE_PROJECT_ROOT"))]
+    (let [root (fs/canonicalize value)]
+      (when-not (or (npm-root? root) (roles-at? root))
+        (exit! 1 (str "SWARMFORGE_PROJECT_ROOT is not a SwarmForge project: " root)))
+      (str root))))
+
+(defn nearest-project-root []
+  (some (fn [root]
+          (when (or (npm-root? root) (roles-at? root))
+            (str root)))
+        (ancestor-paths (fs/cwd))))
+
+(defn nearest-npm-project []
+  (some (fn [root] (when (npm-project? root) root))
+        (ancestor-paths (fs/cwd))))
+
+(declare tool-spec)
+
+(defn project-root [tool]
+  (or (explicit-project-root)
+      (nearest-project-root)
+      (exit! 1 (str "Cannot find SwarmForge project root for " tool
+                    ". Run from the project or set SWARMFORGE_PROJECT_ROOT."))))
+
+(defn absolute-symlink? [path]
+  (and (fs/sym-link? path)
+       (fs/absolute? (Files/readSymbolicLink (fs/path path)))))
+
+(defn safe-executable? [path]
+  (and (fs/executable? path) (not (absolute-symlink? path))))
+
+(defn sha256-file [path]
+  (let [digest (MessageDigest/getInstance "SHA-256")]
+    (with-open [input (io/input-stream (str path))]
+      (let [buffer (byte-array 8192)]
+        (loop []
+          (let [read (.read input buffer)]
+            (when (pos? read)
+              (.update digest buffer 0 read)
+              (recur))))))
+    (apply str (map #(format "%02x" (bit-and (int %) 0xff)) (.digest digest)))))
+
+(defn with-file-lock [path f]
+  (fs/create-dirs (fs/parent path))
+  (with-open [channel (FileChannel/open (fs/path path)
+                                        (into-array StandardOpenOption
+                                                    [StandardOpenOption/CREATE
+                                                     StandardOpenOption/WRITE]))]
+    (with-open [_lock (.lock channel)]
+      (f))))
+
+(defn npm-state-file [root]
+  (fs/path root ".swarmforge" "tooling" "npm-lock.sha256"))
+
+(defn npm-ready? [root lock-hash]
+  (and (fs/regular-file? (fs/path root "node_modules" ".package-lock.json"))
+       (= lock-hash (str/trim (if (fs/regular-file? (npm-state-file root))
+                                (slurp (str (npm-state-file root)))
+                                "")))))
+
+(def npm-prepared (atom #{}))
+
+(defn ensure-npm-deps! [root]
+  (when-not (fs/regular-file? (fs/path root "package.json"))
+    (exit! 1 (str "TypeScript tools require package.json in " root)))
+  (when-not (fs/regular-file? (fs/path root "package-lock.json"))
+    (exit! 1 (str "TypeScript tools require package-lock.json in " root
+                  "; run npm install once to create it")))
+  (let [key (str (fs/canonicalize root))]
+    (when-not (contains? @npm-prepared key)
+      (with-file-lock (fs/path root ".swarmforge" "tooling" "npm-ci.lock")
+        (fn []
+          (let [lock-hash (sha256-file (fs/path root "package-lock.json"))]
+            (when-not (npm-ready? root lock-hash)
+              (let [result (sh/sh "npm" "ci" "--ignore-scripts" :dir (str root))]
+                (when-not (zero? (:exit result))
+                  (exit! 1 (str "npm ci --ignore-scripts failed in " root "\n"
+                                (:err result) (:out result)))))
+              (spit (str (npm-state-file root)) (str lock-hash "\n")))
+            (when-not (npm-ready? root lock-hash)
+              (exit! 1 (str "npm dependencies were not prepared in " root))))))
+      (swap! npm-prepared conj key))))
 
 (defn canonical-tool [tool]
   (str/lower-case (or tool "")))
@@ -83,6 +179,9 @@
 (defn wrapper-path [root tool]
   (fs/path (bin-dir root) (canonical-tool tool)))
 
+(defn npm-bin-path [root spec]
+  (fs/path root "node_modules" ".bin" (:bin spec)))
+
 (defn source-dir [root source]
   (if-let [override (not-empty (System/getenv "SWARMFORGE_TOOL_SRC"))]
     (fs/path override)
@@ -92,12 +191,15 @@
   (vec (or (:needs (tool-spec tool)) [])))
 
 (defn missing-tool [root tool]
-  (first (remove #(fs/executable? (wrapper-path root %))
-                 (cons tool (needed-tools tool)))))
+  (first (remove #(and (safe-executable? (wrapper-path root %))
+                       (let [spec (tool-spec %)]
+                         (or (not (:npm-package spec))
+                             (safe-executable? (npm-bin-path root spec)))))
+                (cons tool (needed-tools tool)))))
 
 (defn require-tool! [tool]
   (tool-spec tool)
-  (let [root (project-root)
+  (let [root (project-root tool)
         missing (missing-tool root tool)]
     (if missing
       (exit! 1 (str "MISSING: " missing "\nRun: swarm_tool.sh ensure " missing))
@@ -111,12 +213,37 @@
     (when-not (zero? (:exit result))
       (exit! 1 (str "Failed to clone " url "\n" (:err result) (:out result))))))
 
-(defn ensure-source! [root source]
-  (let [dir (source-dir root source)]
+(defn source-head [dir]
+  (let [result (sh/sh "git" "-C" (str dir) "rev-parse" "HEAD")]
+    (when (zero? (:exit result)) (str/trim (:out result)))))
+
+(defn ensure-pinned-source! [dir spec]
+  (when-let [revision (:revision spec)]
+    (when-not (fs/exists? (fs/path dir ".git"))
+      (exit! 1 (str "Pinned tool source is not a Git checkout: " dir)))
+    (when-not (= revision (source-head dir))
+      (let [fetch (sh/sh "git" "-C" (str dir) "fetch" "--depth" "1" "origin" revision)]
+        (when-not (zero? (:exit fetch))
+          (exit! 1 (str "Failed to fetch pinned tool revision " revision "\n"
+                        (:err fetch) (:out fetch)))))
+      (let [checkout (sh/sh "git" "-C" (str dir) "checkout" "--detach" revision)]
+        (when-not (zero? (:exit checkout))
+          (exit! 1 (str "Failed to checkout pinned tool revision " revision "\n"
+                        (:err checkout) (:out checkout))))))
+    (when-not (= revision (source-head dir))
+      (exit! 1 (str "Tool source revision mismatch in " dir
+                    ": expected " revision)))))
+
+(defn ensure-source! [root spec]
+  (let [source (:source spec)
+        dir (source-dir root source)
+        override (not-empty (System/getenv "SWARMFORGE_TOOL_SRC"))]
     (when-not (fs/exists? (fs/path dir "bb.edn"))
-      (when (System/getenv "SWARMFORGE_TOOL_SRC")
+      (when override
         (exit! 1 (str "SWARMFORGE_TOOL_SRC is missing bb.edn: " dir)))
       (clone-source! dir source))
+    (when-not override
+      (ensure-pinned-source! dir spec))
     dir))
 
 (defn mutate-rewrite-bash []
@@ -154,6 +281,8 @@
     :else ""))
 
 (defn write-wrapper! [path body]
+  (when (absolute-symlink? path)
+    (fs/delete-if-exists path))
   (fs/create-dirs (fs/parent path))
   (spit (str path) (str "#!/usr/bin/env bash\n" body))
   (fs/set-posix-file-permissions path "rwxr-xr-x")
@@ -166,6 +295,11 @@
      target
      (str (rewrite-bash tool)
           "exec bb --config " (sq config) " " bb-task " \"$@\"\n"))))
+
+(defn write-npm-wrapper! [root tool spec]
+  (let [target (wrapper-path root tool)
+        binary (npm-bin-path root spec)]
+    (write-wrapper! target (str "exec " (sq (str binary)) " \"$@\"\n"))))
 
 (defn edn-paths [paths]
   (str/join " " (map pr-str (or paths []))))
@@ -192,12 +326,18 @@
 
 (defn install-one! [tool]
   (let [spec (tool-spec tool)
-        root (project-root)
+        root (project-root tool)
         name (canonical-tool tool)
-        target (if-let [bb-task (:bb-task spec)]
-                 (write-bb-wrapper! root name bb-task
-                                    (ensure-source! root (:source spec)))
-                 (write-mvn-wrapper! root name spec))]
+        target (cond
+                 (:npm-package spec) (do
+                                       (ensure-npm-deps! root)
+                                       (when-not (safe-executable? (npm-bin-path root spec))
+                                         (exit! 1 (str "Locked npm package is missing its executable: "
+                                                       (:npm-package spec))))
+                                       (write-npm-wrapper! root name spec))
+                 (:bb-task spec) (write-bb-wrapper! root name (:bb-task spec)
+                                                     (ensure-source! root spec))
+                 :else (write-mvn-wrapper! root name spec))]
     (println "INSTALLED:" name (str target))))
 
 (defn ensure-tool! [tool]

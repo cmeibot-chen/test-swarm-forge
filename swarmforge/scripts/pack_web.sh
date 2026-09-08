@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [[ "${1:-}" == --test-* ]]; then
   REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-  exec bb "$REPO_ROOT/test/swarmforge/pack_web_test.bb" "$@"
+  exec "$SCRIPT_DIR/bb.sh" "$REPO_ROOT/test/swarmforge/pack_web_test.bb" "$@"
 else
-  exec bb "$SCRIPT_DIR/pack_web.bb" "$@"
+  exec "$SCRIPT_DIR/bb.sh" "$SCRIPT_DIR/pack_web.bb" "$@"
 fi

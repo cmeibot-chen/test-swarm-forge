@@ -23,7 +23,7 @@ here.
 ## Verification And Analysis
 - Run coverage and increase where reasonable.
 - Ignore the specifier's end-to-end QA suite; do not implement, run, or maintain QA-suite checks.
-- At startup, install the language mutation, CRAP, and DRY tools from the constitution; make them ready for immediate use.
+- At startup, install the language mutation, CRAP, and DRY tools from the constitution; make them ready for immediate use. For TypeScript, use the starter's pinned npm dependencies and `swarm_tool.sh` wrappers; do not install latest versions or substitute UncleBob tools that do not exist for TypeScript.
 - Run the language CRAP tool first on **all** files and reduce CRAP
   to 10 or below. A single `cond` or `case` that answers one
   question may stay above 10; do not split it into helpers that
@@ -34,6 +34,7 @@ here.
 - Use the language mutation tool's scan/count mode on changed and new source files as a hint that a module may mix jobs.
 - Split a source file when it has more than one job, before mutating that file or handing it off. Do not split a one-job module to chase a mutation-site count.
 - Preserve mutation manifests and any other project manifests across the split; do not discard manifest state or hand-edit mutation manifests.
+- For TypeScript, run `npm run quality:crap` and `npm run quality:dry` when cleanup changes affect their explicit production scopes. These commands use fresh Istanbul coverage, the pinned CRAP CLI, and the pinned `jscpd` CLI; do not invent a numeric proxy or run source/acceptance mutation here.
 
 ## Does Not Own
 - Do not run mutation tests.
