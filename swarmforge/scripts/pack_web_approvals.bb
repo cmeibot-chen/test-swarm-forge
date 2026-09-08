@@ -30,7 +30,9 @@
 (defn write-reviews! [root id reviews]
   (let [file (reviews-file root id)]
     (fs/create-dirs (fs/parent file))
-    (spit (str file) (json/generate-string reviews))))
+    (let [tmp (fs/create-temp-file {:dir (fs/parent file) :prefix ".reviews-"})]
+      (spit (str tmp) (json/generate-string reviews))
+      (fs/move tmp file {:atomic-move true :replace-existing true}))))
 
 (defn drop-reviews! [root id]
   (fs/delete-if-exists (reviews-file root id)))
@@ -53,7 +55,9 @@
   (when-not (str/blank? task-id)
     (let [file (task-reviews-file root task-id)]
       (fs/create-dirs (fs/parent file))
-      (spit (str file) (json/generate-string store)))))
+      (let [tmp (fs/create-temp-file {:dir (fs/parent file) :prefix ".reviews-"})]
+        (spit (str tmp) (json/generate-string store))
+        (fs/move tmp file {:atomic-move true :replace-existing true})))))
 
 (defn drop-task-reviews! [root task-id]
   (when-not (str/blank? task-id)
