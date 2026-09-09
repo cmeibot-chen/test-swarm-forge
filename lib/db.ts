@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import type { Todo } from "./todos";
 
 const connectionString = process.env.DATABASE_URL ?? "postgres://postgres:postgres@localhost:5432/todos";
 const globalForDatabase = globalThis as typeof globalThis & { todoPool?: Pool };
@@ -9,8 +10,6 @@ export const pool = globalForDatabase.todoPool ?? new Pool({
   query_timeout: 2_000,
 });
 if (process.env.NODE_ENV !== "production") globalForDatabase.todoPool = pool;
-
-export type Todo = { id: number; text: string; createdAt: string };
 
 export async function listTodos(): Promise<Todo[]> {
   const result = await pool.query<{ id: string; text: string; created_at: Date }>(
