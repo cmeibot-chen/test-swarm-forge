@@ -327,7 +327,8 @@
 (declare close-project!)
 
 (defn instantiate! [forge {:keys [name github pack conf mission replace]}]
-  (let [dir-name (inferred-name name (boolean github))]
+  (let [github-ref (if (string? github) github name)
+        dir-name (inferred-name name (boolean github))]
     (when (str/blank? dir-name)
       (throw (ex-info "Missing project name" {:http-status 400})))
     (safe-paths/require-project-name! dir-name)
@@ -346,7 +347,7 @@
                              (str ".creating-" dir-name "-" (java.util.UUID/randomUUID)))]
         (try
           (if github
-            (clone-github! (github-clone-url github) staging)
+            (clone-github! (github-clone-url github-ref) staging)
             (fs/create-dirs staging))
           (overlay-pack! forge staging pack false)
           (when-not (str/blank? conf)

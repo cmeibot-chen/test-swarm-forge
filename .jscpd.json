@@ -1,0 +1,33 @@
+{
+  "path": [
+    "lib",
+    "app"
+  ],
+  "format": [
+    "typescript",
+    "javascript"
+  ],
+  "minTokens": 50,
+  "minLines": 5,
+  "threshold": 0,
+  "reporters": [
+    "console",
+    "json",
+    "html",
+    "threshold"
+  ],
+  "output": "build/quality/jscpd",
+  "ignore": [
+    "**/node_modules/**",
+    "**/.next/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/reports/**",
+    "**/generated/**",
+    "**/test/**",
+    "**/tests/**",
+    "**/e2e/**"
+  ],
+  "gitignore": true,
+  "mode": "mild"
+}
