@@ -61,6 +61,16 @@ Docker Desktop is available on the host; a sandbox must not be assumed to share
 the host Docker daemon. `npm run verify:pipeline` runs the complete ordered
 pipeline, including the container gate.
 
+Architecture verification on 2026-09-09 passed local unit and property tests,
+type checking, lint (including the core import boundary), CRAP, duplication,
+source mutation (16/16 killed), the production build, and the Hello World
+acceptance scenario. Per operator clarification
+`clar-20260909T043000101340675Z`, PostgreSQL Compose and outage/recovery checks
+are deferred until the merged project runs on the host. The Docker Sandbox
+intentionally does not expose the host Docker socket; this limitation does
+not block the architecture handoff. These host-only checks have not been
+verified by this architecture pass.
+
 For SwarmForge's canonical toolchain, run
 `swarmforge/scripts/runtime_preflight.sh --runtime local --skip-docker` before
 local checks and use `swarmforge/scripts/create_typescript_fixture.sh` to make
