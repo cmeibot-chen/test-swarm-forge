@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { generateEntrypoint } from "./generate.ts";
 
@@ -23,20 +23,31 @@ async function ensureTool(tool: string, path: string) {
   }
 }
 
-function withoutMutationStamp(source: string) {
-  const lines = source.split(/\r?\n/);
-  const begin = lines.findIndex((line) => line === "# acceptance-mutation-manifest-begin");
-  const end = lines.findIndex((line, index) => index > begin && line === "# acceptance-mutation-manifest-end");
-  if (begin <= 0 || end < 0 || !lines[begin - 1].startsWith("# mutation-stamp:")) return source;
-  lines.splice(begin - 1, end - begin + 2);
-  if (lines[begin - 1] === "") lines.splice(begin - 1, 1);
-  return lines.join("\n");
+function testBaseURL(value: string) {
+  const url = new URL(value);
+  const local = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  if (!local && process.env.SWARMFORGE_ALLOW_REMOTE_TEST_URL !== "1") {
+    throw new Error(`Acceptance mutation requires a local BASE_URL, got ${url.origin}`);
+  }
+  if (process.env.NODE_ENV === "production" || process.env.SWARMFORGE_ACCEPTANCE_ENV === "production") {
+    throw new Error("Acceptance mutation refuses a production target");
+  }
+  return value.replace(/\/+$/, "");
 }
 
 await rm(workDir, { recursive: true, force: true });
 await ensureTool("gherkin-parser", parser);
 await ensureTool("gherkin-mutator", mutator);
 await mkdir(workDir, { recursive: true });
+const baseURL = testBaseURL(process.env.BASE_URL ?? "http://127.0.0.1:3000");
+const runner = join(root, "node_modules/.bin/tsx");
+const mutationEnv = {
+  ...process.env,
+  BASE_URL: baseURL,
+  SWARMFORGE_ACCEPTANCE_ENV: process.env.SWARMFORGE_ACCEPTANCE_ENV ?? "test",
+  SWARMFORGE_TEST_RUN_ID: process.env.SWARMFORGE_TEST_RUN_ID ?? ("acceptance-mutation-" + process.pid),
+  SWARMFORGE_ACCEPTANCE_LOCK_DIR: workDir,
+};
 const featureEntries = (await readdir(join(root, "features"), { withFileTypes: true }))
   .filter((entry) => entry.isFile() && extname(entry.name) === ".feature")
   .sort((left, right) => left.name.localeCompare(right.name));
@@ -44,18 +55,18 @@ if (featureEntries.length === 0) throw new Error("No Gherkin feature files found
 
 for (const entry of featureEntries) {
   const feature = join(root, "features", entry.name);
+  const featurePath = relative(root, feature).split("\\").join("/");
   const stem = basename(entry.name, extname(entry.name));
   const featureWorkDir = join(workDir, stem);
-  const featureInput = join(featureWorkDir, "input.feature");
   const ir = join(featureWorkDir, "ir", `${stem}.json`);
   const generated = join(featureWorkDir, "generated");
   await mkdir(featureWorkDir, { recursive: true });
   await mkdir(join(featureWorkDir, "ir"), { recursive: true });
-  await writeFile(featureInput, withoutMutationStamp(await readFile(feature, "utf8")));
-  execFileSync(parser, [featureInput, ir], { stdio: "inherit" });
-  await generateEntrypoint(ir, generated, relative(root, feature));
+  execFileSync(parser, [feature, ir], { stdio: "inherit" });
+  const entrypoint = await generateEntrypoint(ir, generated, featurePath);
+  execFileSync(runner, [entrypoint], { stdio: "inherit", env: mutationEnv });
   execFileSync(mutator, [
-    "--feature", featureInput,
+    "--feature", featurePath,
     "--work-dir", featureWorkDir,
     "--generated-dir", generated,
     "--level", "hard",
@@ -63,11 +74,6 @@ for (const entry of featureEntries) {
     "--runner-worker", "tsx acceptance/runner-worker.ts",
   ], {
     stdio: "inherit",
-    env: {
-      ...process.env,
-      SWARMFORGE_ACCEPTANCE_ENV: process.env.SWARMFORGE_ACCEPTANCE_ENV ?? "test",
-      SWARMFORGE_TEST_RUN_ID: process.env.SWARMFORGE_TEST_RUN_ID ?? ("acceptance-mutation-" + process.pid),
-      SWARMFORGE_ACCEPTANCE_LOCK_DIR: workDir,
-    },
+    env: mutationEnv,
   });
 }
