@@ -6,12 +6,14 @@ function composeProject() {
   return process.env.SWARMFORGE_ACCEPTANCE_COMPOSE_PROJECT ?? process.env.COMPOSE_PROJECT_NAME;
 }
 
-function runCompose(args: string[]) {
+export function runCompose(args: string[]) {
   const project = composeProject();
   if (!project) {
     throw new Error("PostgreSQL lifecycle requires COMPOSE_PROJECT_NAME or SWARMFORGE_ACCEPTANCE_COMPOSE_PROJECT");
   }
-  execFileSync("docker", ["compose", "-p", project, ...args], { stdio: "inherit" });
+  execFileSync("docker", ["compose", "-p", project, ...args], {
+    stdio: ["ignore", "inherit", "inherit"],
+  });
 }
 
 async function waitForHealth(baseURL: string, expectedStatus: number) {
