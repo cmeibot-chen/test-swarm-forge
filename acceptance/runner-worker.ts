@@ -2,7 +2,8 @@ import { createInterface } from "node:readline";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { runFeature, type Feature } from "./runtime.ts";
-import { restorePostgres, steps } from "./steps.ts";
+import { restorePostgres } from "./postgres.ts";
+import { steps } from "./steps.ts";
 
 const lockTTL = Number(process.env.SWARMFORGE_MUTATION_LOCK_TTL_MS ?? 15 * 60 * 1_000);
 const lockPoll = 25;

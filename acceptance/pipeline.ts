@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { basename, extname, join, relative, resolve } from "node:path";
 import { generateEntrypoint } from "./generate.ts";
-import { restorePostgres } from "./steps.ts";
+import { restorePostgres } from "./postgres.ts";
 
 const root = resolve(process.cwd());
 const workDir = join(root, "build/acceptance");
