@@ -1,3 +1,5 @@
+export type Todo = { id: number; text: string; createdAt: string };
+
 export const MAX_TODO_LENGTH = 240;
 
 export function validateTodoText(value: unknown): string {

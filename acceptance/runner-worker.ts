@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { runFeature, type Feature } from "./runtime.ts";
+import { restorePostgres } from "./postgres.ts";
 import { steps } from "./steps.ts";
 
 const lockTTL = Number(process.env.SWARMFORGE_MUTATION_LOCK_TTL_MS ?? 15 * 60 * 1_000);
@@ -31,7 +32,7 @@ async function staleLock(lock: string) {
 }
 
 async function withMutationLock(workDir: string, run: () => Promise<void>) {
-  const lock = join(dirname(workDir), ".runner.lock");
+  const lock = join(process.env.SWARMFORGE_ACCEPTANCE_LOCK_DIR ?? dirname(workDir), ".runner.lock");
   const token = [process.pid, Date.now(), Math.random().toString(36).slice(2)].join("-");
   let acquired = false;
   while (!acquired) {
@@ -83,15 +84,12 @@ for await (const line of input) {
     const feature = JSON.parse(await readFile(job.feature_json, "utf8")) as Feature;
     const baseURL = testBaseURL(process.env.BASE_URL ?? "http://127.0.0.1:3000");
     await withMutationLock(job.work_dir, async () => {
-      const reset = await fetch(baseURL + "/api/todos", {
-        method: "DELETE",
-        headers: {
-          "x-swarmforge-test-reset": "1",
-          "x-swarmforge-test-run": process.env.SWARMFORGE_TEST_RUN_ID ?? "acceptance-mutation",
-        },
-      });
-      if (!reset.ok) throw new Error("Mutation data reset failed: " + reset.status);
-      await runFeature(feature, steps, baseURL);
+      await restorePostgres(baseURL);
+      try {
+        await runFeature(feature, steps, baseURL);
+      } finally {
+        await restorePostgres(baseURL);
+      }
     });
     process.stdout.write(JSON.stringify({ id, outcome: "test_success", output: "", error: "", duration: (Date.now() - started) * 1_000_000 }) + "\n");
   } catch (error) {
