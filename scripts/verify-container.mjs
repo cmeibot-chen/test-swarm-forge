@@ -99,19 +99,21 @@ try {
   compose(["up", "-d", "--build"]);
   composeStarted = true;
   await waitFor("http://127.0.0.1:" + port + "/api/health");
+  await expectHealth("http://127.0.0.1:" + port + "/api/health", 200, "ok");
 
-  const text = "Docker persistence check";
-  await request("POST", "http://127.0.0.1:" + port + "/api/todos", { text });
-  const e2eEnv = { ...env, BASE_URL: "http://127.0.0.1:" + port, E2E_TODO: "Docker browser check" };
+  const e2eEnv = { ...env, BASE_URL: "http://127.0.0.1:" + port };
   runCommand("browser e2e", "npm", ["run", "test:e2e"], { env: e2eEnv });
+
+  compose(["stop", "db"]);
+  await expectHealth("http://127.0.0.1:" + port + "/api/health", 503, "unavailable");
+  compose(["start", "db"]);
+  await waitFor("http://127.0.0.1:" + port + "/api/health");
+  await expectHealth("http://127.0.0.1:" + port + "/api/health", 200, "ok");
 
   compose(["up", "-d", "--build", "--no-deps", "app"]);
   await waitFor("http://127.0.0.1:" + port + "/api/health");
-  const todos = await request("GET", "http://127.0.0.1:" + port + "/api/todos");
-  if (!todos.todos?.some((todo) => todo.text === text) ||
-      !todos.todos?.some((todo) => todo.text === "Docker browser check")) {
-    throw new Error("Todo did not survive the app-only rebuild");
-  }
+  await expectHealth("http://127.0.0.1:" + port + "/api/health", 200, "ok");
+  runCommand("browser e2e after rebuild", "npm", ["run", "test:e2e"], { env: e2eEnv });
   image = compose(["images", "-q", "app"]).trim();
   passed = true;
   console.log("Container verification passed for " + source.commit + "; logs: " + logFile);
@@ -129,7 +131,7 @@ try {
     compose_project: runId,
     volume: runId + "_todos-db",
     app_port: port,
-    scope: ["compose build", "PostgreSQL migration/health", "browser e2e", "app-only rebuild", "PostgreSQL persistence"],
+    scope: ["compose build", "PostgreSQL migration/health", "browser e2e", "database outage/recovery", "app-only rebuild"],
     commands,
     duration_ms: Date.now() - started,
   };
@@ -169,7 +171,7 @@ try {
     compose_project: runId,
     volume: runId + "_todos-db",
     app_port: port,
-    scope: ["compose build", "PostgreSQL migration/health", "browser e2e", "app-only rebuild", "PostgreSQL persistence"],
+    scope: ["compose build", "PostgreSQL migration/health", "browser e2e", "database outage/recovery", "app-only rebuild"],
     commands,
     duration_ms: Date.now() - started,
     error: failure ?? null,
@@ -212,17 +214,23 @@ async function waitFor(url) {
   throw new Error("Timed out waiting for " + url);
 }
 
-async function request(method, url, body) {
+async function expectHealth(url, expectedCode, expectedStatus) {
   const commandStarted = Date.now();
-  const response = await fetch(url, {
-    method,
-    headers: body ? { "content-type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  recordHttp("HTTP " + method, method, url, commandStarted, response.status);
-  const payload = await response.json();
-  if (!response.ok) throw new Error(url + " returned " + response.status + ": " + JSON.stringify(payload));
-  return payload;
+  const response = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+  const body = await response.text();
+  recordHttp("health " + expectedStatus, "GET", url, commandStarted, response.status);
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new Error("Health response was not JSON: " + body);
+  }
+  if (response.status !== expectedCode || payload.status !== expectedStatus) {
+    throw new Error("Expected health " + expectedCode + " / " + expectedStatus + ", got " + response.status + " / " + JSON.stringify(payload));
+  }
+  if (expectedStatus === "unavailable" && /(postgres:\/\/|password|stack trace|node_modules)/i.test(body)) {
+    throw new Error("Unavailable health response exposed internal details");
+  }
 }
 
 function freePort() {

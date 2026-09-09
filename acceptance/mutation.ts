@@ -1,15 +1,11 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { basename, extname, join, relative, resolve } from "node:path";
 import { generateEntrypoint } from "./generate.ts";
 
 const root = resolve(process.cwd());
 const workDir = join(root, "build/acceptance-mutation");
-const feature = join(root, "features/todos.feature");
-const featureInput = join(workDir, "input/todos.feature");
-const ir = join(workDir, "ir/todos.json");
-const generated = join(workDir, "generated");
 const parser = join(root, ".swarmforge/bin/gherkin-parser");
 const mutator = join(root, ".swarmforge/bin/gherkin-mutator");
 const toolScript = [
@@ -38,25 +34,40 @@ function withoutMutationStamp(source: string) {
 }
 
 await rm(workDir, { recursive: true, force: true });
-await mkdir(join(workDir, "ir"), { recursive: true });
-await mkdir(join(workDir, "input"), { recursive: true });
-await writeFile(featureInput, withoutMutationStamp(await readFile(feature, "utf8")));
 await ensureTool("gherkin-parser", parser);
 await ensureTool("gherkin-mutator", mutator);
-execFileSync(parser, [featureInput, ir], { stdio: "inherit" });
-await generateEntrypoint(ir, generated);
-execFileSync(mutator, [
-  "--feature", featureInput,
-  "--work-dir", workDir,
-  "--generated-dir", generated,
-  "--level", "hard",
-  "--workers", "4",
-  "--runner-worker", "tsx acceptance/runner-worker.ts",
-], {
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    SWARMFORGE_ACCEPTANCE_ENV: process.env.SWARMFORGE_ACCEPTANCE_ENV ?? "test",
-    SWARMFORGE_TEST_RUN_ID: process.env.SWARMFORGE_TEST_RUN_ID ?? ("acceptance-mutation-" + process.pid),
-  },
-});
+await mkdir(workDir, { recursive: true });
+const featureEntries = (await readdir(join(root, "features"), { withFileTypes: true }))
+  .filter((entry) => entry.isFile() && extname(entry.name) === ".feature")
+  .sort((left, right) => left.name.localeCompare(right.name));
+if (featureEntries.length === 0) throw new Error("No Gherkin feature files found");
+
+for (const entry of featureEntries) {
+  const feature = join(root, "features", entry.name);
+  const stem = basename(entry.name, extname(entry.name));
+  const featureWorkDir = join(workDir, stem);
+  const featureInput = join(featureWorkDir, "input.feature");
+  const ir = join(featureWorkDir, "ir", `${stem}.json`);
+  const generated = join(featureWorkDir, "generated");
+  await mkdir(featureWorkDir, { recursive: true });
+  await mkdir(join(featureWorkDir, "ir"), { recursive: true });
+  await writeFile(featureInput, withoutMutationStamp(await readFile(feature, "utf8")));
+  execFileSync(parser, [featureInput, ir], { stdio: "inherit" });
+  await generateEntrypoint(ir, generated, relative(root, feature));
+  execFileSync(mutator, [
+    "--feature", featureInput,
+    "--work-dir", featureWorkDir,
+    "--generated-dir", generated,
+    "--level", "hard",
+    "--workers", "4",
+    "--runner-worker", "tsx acceptance/runner-worker.ts",
+  ], {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      SWARMFORGE_ACCEPTANCE_ENV: process.env.SWARMFORGE_ACCEPTANCE_ENV ?? "test",
+      SWARMFORGE_TEST_RUN_ID: process.env.SWARMFORGE_TEST_RUN_ID ?? ("acceptance-mutation-" + process.pid),
+      SWARMFORGE_ACCEPTANCE_LOCK_DIR: workDir,
+    },
+  });
+}

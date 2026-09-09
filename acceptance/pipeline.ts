@@ -1,14 +1,12 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { basename, extname, join, relative, resolve } from "node:path";
 import { generateEntrypoint } from "./generate.ts";
+import { restorePostgres } from "./steps.ts";
 
 const root = resolve(process.cwd());
 const workDir = join(root, "build/acceptance");
-const feature = join(root, "features/todos.feature");
-const ir = join(workDir, "ir/todos.json");
-const dry = join(workDir, "dry/todos.json");
 const generated = join(workDir, "generated");
 const toolScript = [
   process.env.SWARMFORGE_TOOL_SCRIPT,
@@ -26,17 +24,36 @@ async function ensureTool(tool: string, path: string) {
   }
 }
 
+const featureEntries = (await readdir(join(root, "features"), { withFileTypes: true }))
+  .filter((entry) => entry.isFile() && extname(entry.name) === ".feature")
+  .sort((left, right) => left.name.localeCompare(right.name));
+if (featureEntries.length === 0) throw new Error("No Gherkin feature files found");
+
+await rm(workDir, { recursive: true, force: true });
 await mkdir(join(workDir, "ir"), { recursive: true });
 await mkdir(join(workDir, "dry"), { recursive: true });
-await rm(generated, { recursive: true, force: true });
-for (const tool of ["gherkin-parser", "ir-dry-checker"]) {
-  const path = join(root, `.swarmforge/bin/${tool}`);
+await mkdir(generated, { recursive: true });
+const parser = join(root, ".swarmforge/bin/gherkin-parser");
+const dryChecker = join(root, ".swarmforge/bin/ir-dry-checker");
+for (const [tool, path] of [["gherkin-parser", parser], ["ir-dry-checker", dryChecker]] as const) {
   await ensureTool(tool, path);
 }
-execFileSync(join(root, ".swarmforge/bin/gherkin-parser"), [feature, ir], { stdio: "inherit" });
-execFileSync(join(root, ".swarmforge/bin/ir-dry-checker"), [ir, dry], { stdio: "inherit" });
-const entrypoint = await generateEntrypoint(ir, generated);
-execFileSync(join(root, "node_modules/.bin/tsx"), [entrypoint], {
-  stdio: "inherit", env: { ...process.env, BASE_URL: process.env.BASE_URL ?? "http://127.0.0.1:3000" },
-});
-console.log(`Acceptance passed: ${feature}`);
+
+const baseURL = process.env.BASE_URL ?? "http://127.0.0.1:3000";
+try {
+  for (const entry of featureEntries) {
+    const feature = join(root, "features", entry.name);
+    const stem = basename(entry.name, extname(entry.name));
+    const ir = join(workDir, "ir", `${stem}.json`);
+    const dry = join(workDir, "dry", `${stem}.json`);
+    execFileSync(parser, [feature, ir], { stdio: "inherit" });
+    execFileSync(dryChecker, [ir, dry], { stdio: "inherit" });
+    const entrypoint = await generateEntrypoint(ir, generated, relative(root, feature));
+    execFileSync(join(root, "node_modules/.bin/tsx"), [entrypoint], {
+      stdio: "inherit", env: { ...process.env, BASE_URL: baseURL },
+    });
+    console.log(`Acceptance passed: ${feature}`);
+  }
+} finally {
+  await restorePostgres(baseURL);
+}
