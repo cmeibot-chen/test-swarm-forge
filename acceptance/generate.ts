@@ -8,6 +8,21 @@ function modulePath(fromDir: string, target: string) {
   return path.startsWith(".") ? path : `./${path}`;
 }
 
+export function featureMetadataSlug(featurePath: string) {
+  let slug = "";
+  let previousHyphen = false;
+  for (const character of featurePath.toLowerCase()) {
+    if ((character >= "a" && character <= "z") || (character >= "0" && character <= "9")) {
+      slug += character;
+      previousHyphen = false;
+    } else if (!previousHyphen && slug) {
+      slug += "-";
+      previousHyphen = true;
+    }
+  }
+  return slug.replace(/^-+|-+$/g, "");
+}
+
 export async function generateEntrypoint(irPath: string, outputDir: string, featurePath?: string) {
   const feature = JSON.parse(await readFile(irPath, "utf8")) as Feature;
   const stem = basename(irPath, extname(irPath));
@@ -15,7 +30,6 @@ export async function generateEntrypoint(irPath: string, outputDir: string, feat
   const runtimeImport = modulePath(outputDir, join(process.cwd(), "acceptance/runtime.ts"));
   const stepsImport = modulePath(outputDir, join(process.cwd(), "acceptance/steps.ts"));
   const irImport = modulePath(outputDir, irPath);
-  await mkdir(join(outputDir, "metadata"), { recursive: true });
   const source = `import { readFile } from "node:fs/promises";
 import { runFeature } from "${runtimeImport}";
 import { steps } from "${stepsImport}";
@@ -23,11 +37,17 @@ const feature = JSON.parse(await readFile(new URL(${JSON.stringify(irImport)}, i
 await runFeature(feature, steps, process.env.BASE_URL ?? "http://127.0.0.1:3000");
 `;
   const output = join(outputDir, `${stem}.test.mjs`);
+  const generatedFile = relative(process.cwd(), output).split(sep).join("/");
+  const implementationHash = `sha256:${createHash("sha256").update(source).digest("hex")}`;
+  await mkdir(join(outputDir, "metadata"), { recursive: true });
   await writeFile(output, source);
-  await writeFile(join(outputDir, `metadata/${stem}.json`), JSON.stringify({
+  await writeFile(join(outputDir, `metadata/${featureMetadataSlug(sourcePath)}.json`), JSON.stringify({
+    schema_version: 1,
     feature_path: sourcePath,
-    implementation_hash: createHash("sha256").update(source).digest("hex"),
-    scenarios: feature.scenarios.map((scenario, index) => ({ index, name: scenario.name })),
+    ir_path: relative(process.cwd(), irPath).split(sep).join("/"),
+    implementation_hash: implementationHash,
+    hash_scope: "generated_files",
+    generated_files: [generatedFile],
   }, null, 2) + "\n");
   return output;
 }

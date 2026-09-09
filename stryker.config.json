@@ -15,7 +15,8 @@
   "disableTypeChecks": true,
   "disableBail": true,
   "concurrency": 4,
-  "incremental": false,
+  "incremental": true,
+  "incrementalFile": "build/quality/stryker-incremental.json",
   "tempDirName": "build/quality/stryker-tmp",
   "reporters": [
     "clear-text",
